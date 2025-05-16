@@ -12,6 +12,59 @@ class Signals:
         self.endDate = end_date
         self.indicators = []
 
+    def plotSignals(self, threshold=2):
+        df = self.stockData
+
+        buy_conds = [
+            (df['ADX_14'] > 25) & (df['+DI'] > df['-DI']),
+            (df['EMA_9'] > df['EMA_21']) & (df['EMA_21'] > df['SMA_20']),
+            (df['Close'] > df['SMA_50']) & (
+                df['Close'].shift(1) <= df['SMA_50'].shift(1)),
+            (df['RSI_14'] > 40) & (df['RSI_14'] < 60) & (
+                df['RSI_14'].diff() > 0),
+            (df['Close'] <= df['LOWER_BBAND']) & (
+                df['Close'].shift(1) > df['LOWER_BBAND'].shift(1))
+        ]
+
+        sell_conds = [
+            (df['ADX_14'] > 25) & (df['-DI'] > df['+DI']),
+            (df['EMA_9'] < df['EMA_21']) & (df['EMA_21'] < df['SMA_20']),
+            (df['Close'] < df['SMA_50']) & (
+                df['Close'].shift(1) >= df['SMA_50'].shift(1)),
+            (df['RSI_14'] < 60) & (df['RSI_14'] > 40) & (
+                df['RSI_14'].diff() < 0),
+            (df['Close'] >= df['UPPER_BBAND']) & (
+                df['Close'].shift(1) < df['UPPER_BBAND'].shift(1))
+        ]
+
+        df['buy_signal'] = (pd.DataFrame(buy_conds).T.sum(axis=1) >= threshold)
+        df['sell_signal'] = pd.DataFrame(sell_conds).T.sum(axis=1) >= threshold
+
+        sns.scatterplot(
+            data=df[df['buy_signal']],
+            x=df[df['buy_signal']].index, y='Close',
+            color='lime', marker='^', s=100, label='Buy', zorder=10
+        )
+        sns.scatterplot(
+            data=df[df['sell_signal']],
+            x=df[df['sell_signal']].index, y='Close',
+            color='red', marker='v', s=100, label='Sell', zorder=10
+        )
+
+    def plotIndicators(self):
+        self.plotIndicator('SMA_20', label='SMA_20', color='#f41102')
+        self.plotIndicator('EMA_9', label='EMA_9', color='orange')
+
+        self.plotIndicator(
+            'UPPER_BBAND', label='Higher BBand', color='purple')
+        self.plotIndicator(
+            'LOWER_BBAND', label='Lower BBand', color='purple')
+        plt.fill_between(self.stockData.index, self.stockData['UPPER_BBAND'], self.stockData['LOWER_BBAND'],
+                         color='#FFD700', alpha=0.15)
+
+        self.plotIndicator('RSI_14', label='RSI_14', color='silver')
+        self.plotIndicator('ADX_14', label='ADX_14', color='white')
+
     def SMA(self, span=20):
         col_name = f"SMA_{span}"
         if col_name in self.indicators:
@@ -19,7 +72,6 @@ class Signals:
         self.indicators.append(col_name)
         self.stockData[col_name] = self.stockData['Close'].rolling(
             window=span).mean()
-        self.plotIndicator(col_name, label=col_name, color='#f41102')
         return "SMA calculated successfully"
 
     def EMA(self, span=20):
@@ -30,7 +82,6 @@ class Signals:
         self.stockData[col_name] = self.stockData['Close'] \
             .ewm(span=span, adjust=False) \
             .mean()
-        self.plotIndicator(col_name, label=col_name, color='orange')
         return "EMA calculated successfully"
 
     def BBANDS(self, alpha=2):
@@ -41,16 +92,9 @@ class Signals:
         self.STD()
         self.stockData['UPPER_BBAND'] = self.stockData['SMA_20'] + \
             self.stockData['STD']*alpha
-        self.plotIndicator(
-            'UPPER_BBAND', label='Higher BBand', color='purple')
         self.indicators.append('LOWER_BBAND')
         self.stockData['LOWER_BBAND'] = self.stockData['SMA_20'] - \
             self.stockData['STD']*alpha
-        self.plotIndicator(
-            'LOWER_BBAND', label='Lower BBand', color='purple')
-
-        plt.fill_between(self.stockData.index, self.stockData['UPPER_BBAND'], self.stockData['LOWER_BBAND'],
-                         color='#FFD700', alpha=0.15)
 
     def STD(self, window=20):
         if 'STD' in self.indicators:
@@ -94,7 +138,6 @@ class Signals:
             (df['+DI'] + df['-DI'])
         df[col_name] = df['DX'].ewm(com=period-1, adjust=False).mean()
         df[col_name].iloc[:period] = np.nan
-        self.plotIndicator(col_name, label=col_name, color='white')
 
     def RSI(self, period=14):
 
@@ -116,7 +159,6 @@ class Signals:
         rs.iloc[:period] = np.nan
 
         df[col_name] = 100-(100/(1+rs))
-        self.plotIndicator(col_name, label=col_name, color='silver')
 
     def plotIndicator(self, indicator, label, color):
         if indicator not in self.indicators:
@@ -141,29 +183,35 @@ class Signals:
         return self.indicators
 
 
-plt.style.use('dark_background')
-sns.set_theme(style="darkgrid", rc={
-    'axes.facecolor': 'black',
-    'figure.facecolor': 'black',
-    'grid.color': '0.3',
-    'grid.linestyle': '--'
-})
+if __name__ == '__main__':
+    plt.style.use('dark_background')
+    sns.set_theme(style="darkgrid", rc={
+        'axes.facecolor': 'black',
+        'figure.facecolor': 'black',
+        'grid.color': '0.3',
+        'grid.linestyle': '--'
+    })
 
-signal = Signals('tesla_price.csv')
-signal.ADX()
-signal.RSI()
-signal.BBANDS()
-signal.SMA()
-signal.EMA()
-ax = signal.plotPrice()
-plt.fill_between(signal.stockData.index, 100, 0,
-                 color='white', alpha=0.15)
-plt.xticks(rotation=45, color='white')
-plt.yticks(rotation=45, color='white')
-plt.title('TSLA inc.', color='white', fontweight='bold')
-plt.xlabel('Date', color='silver')
-plt.ylabel('Price', color='silver')
-plt.legend()
-for legend in ax.legend().get_texts():
-    legend.set_color('white')
-plt.show()
+    signal = Signals('tesla_price.csv')
+    signal.ADX()
+    signal.RSI()
+    signal.BBANDS()
+    signal.SMA(span=50)
+    signal.SMA(span=200)
+    signal.EMA(span=9)
+    signal.EMA(span=21)
+    signal.EMA(span=50)
+    signal.plotIndicators()
+    signal.plotSignals()
+    ax = signal.plotPrice()
+    plt.fill_between(signal.stockData.index, 100, 0,
+                     color='white', alpha=0.15)
+    plt.xticks(rotation=45, color='white')
+    plt.yticks(rotation=45, color='white')
+    plt.title('TSLA inc.', color='white', fontweight='bold')
+    plt.xlabel('Date', color='silver')
+    plt.ylabel('Price', color='silver')
+    plt.legend()
+    for legend in ax.legend().get_texts():
+        legend.set_color('white')
+    plt.show()
